@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飞镖轨迹追踪 - Web调试界面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #00ffff;
+        }
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+        }
+        .video-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .video-display {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .video-display img {
+            width: 100%;
+            display: block;
+        }
+        .controls-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            overflow-y: auto;
+            max-height: 90vh;
+        }
+        .control-group {
+            margin-bottom: 20px;
+        }
+        .control-group h3 {
+            color: #00ff00;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .slider-control {
+            margin-bottom: 15px;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: #444;
+            outline: none;
+            border-radius: 3px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #00ffff;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            background: #00ffff;
+            color: #000;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #00cccc;
+        }
+        button.danger {
+            background: #ff4444;
+            color: #fff;
+        }
+        button.danger:hover {
+            background: #cc0000;
+        }
+        .playback-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            align-items: center;
+        }
+        .playback-controls button {
+            flex: 1;
+        }
+        .frame-slider {
+            width: 100%;
+            margin-top: 10px;
+        }
+        .info-panel {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #00ffff;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 飞镖轨迹追踪 - Web调试界面</h1>
+        
+        <div class="main-content">
+            <div class="video-section">
+                <div class="video-display" id="videoDisplay">
+                    <div class="loading">加载中...</div>
+                </div>
+                
+                <div class="playback-controls">
+                    <button onclick="previousFrame()">⏮ 上一帧</button>
+                    <button onclick="togglePlay()" id="playBtn">▶️ 播放</button>
+                    <button onclick="nextFrame()">下一帧 ⏭</button>
+                </div>
+                
+                <input type="range" class="frame-slider" id="frameSlider" 
+                       min="0" max="100" value="0" oninput="seekFrame(this.value)">
+                
+                <div class="info-panel">
+                    <div>当前帧: <span id="currentFrame">0</span> / <span id="totalFrames">0</span></div>
+                    <div>轨迹点数: <span id="trajectoryCount">0</span></div>
+                    <div>检测到的轮廓: <span id="contourCount">0</span></div>
+                </div>
+            </div>
+            
+            <div class="controls-section">
+                <div class="control-group">
+                    <h3>视频文件</h3>
+                    <input type="text" id="videoPath" value="d6f5f2bf0b91763c402d5c43e3e80580_raw.mp4" 
+                           placeholder="输入视频文件名">
+                    <button onclick="loadVideo()">加载视频</button>
+                </div>
+
+                <div class="control-group">
+                    <h3>颜色检测 (RGB)</h3>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>R_min</span>
+                            <span id="R_min_val">77</span>
+                        </div>
+                        <input type="range" id="R_min" min="0" max="255" value="77" 
+                               oninput="updateParam('R_min', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>R_max</span>
+                            <span id="R_max_val">246</span>
+                        </div>
+                        <input type="range" id="R_max" min="0" max="255" value="246" 
+                               oninput="updateParam('R_max', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>G_min</span>
+                            <span id="G_min_val">105</span>
+                        </div>
+                        <input type="range" id="G_min" min="0" max="255" value="105" 
+                               oninput="updateParam('G_min', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>G_max</span>
+                            <span id="G_max_val">255</span>
+                        </div>
+                        <input type="range" id="G_max" min="0" max="255" value="255" 
+                               oninput="updateParam('G_max', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>B_min</span>
+                            <span id="B_min_val">0</span>
+                        </div>
+                        <input type="range" id="B_min" min="0" max="255" value="0" 
+                               oninput="updateParam('B_min', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>B_max</span>
+                            <span id="B_max_val">150</span>
+                        </div>
+                        <input type="range" id="B_max" min="0" max="255" value="150" 
+                               oninput="updateParam('B_max', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>RG_ratio</span>
+                            <span id="RG_ratio_val">23</span>
+                        </div>
+                        <input type="range" id="RG_ratio" min="0" max="200" value="23" 
+                               oninput="updateParam('RG_ratio', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>RB_diff</span>
+                            <span id="RB_diff_val">70</span>
+                        </div>
+                        <input type="range" id="RB_diff" min="0" max="255" value="70" 
+                               oninput="updateParam('RB_diff', this.value)">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>大小过滤</h3>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>Min_Area</span>
+                            <span id="Min_Area_val">26</span>
+                        </div>
+                        <input type="range" id="Min_Area" min="0" max="1000" value="26" 
+                               oninput="updateParam('Min_Area', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>Max_Area</span>
+                            <span id="Max_Area_val">1906</span>
+                        </div>
+                        <input type="range" id="Max_Area" min="0" max="5000" value="1906" 
+                               oninput="updateParam('Max_Area', this.value)">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>运动检测</h3>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>Max_Jump</span>
+                            <span id="Max_Jump_val">158</span>
+                        </div>
+                        <input type="range" id="Max_Jump" min="0" max="500" value="158" 
+                               oninput="updateParam('Max_Jump', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>Min_Motion</span>
+                            <span id="Min_Motion_val">27</span>
+                        </div>
+                        <input type="range" id="Min_Motion" min="0" max="200" value="27" 
+                               oninput="updateParam('Min_Motion', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>Motion_Frames</span>
+                            <span id="Motion_Frames_val">2</span>
+                        </div>
+                        <input type="range" id="Motion_Frames" min="2" max="10" value="2" 
+                               oninput="updateParam('Motion_Frames', this.value)">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>区域排除</h3>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>Exclude_Right</span>
+                            <span id="Exclude_Right_val">582</span>
+                        </div>
+                        <input type="range" id="Exclude_Right" min="0" max="1920" value="582" 
+                               oninput="updateParam('Exclude_Right', this.value)">
+                    </div>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>Exclude_Bottom</span>
+                            <span id="Exclude_Bottom_val">514</span>
+                        </div>
+                        <input type="range" id="Exclude_Bottom" min="0" max="1080" value="514" 
+                               oninput="updateParam('Exclude_Bottom', this.value)">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>播放控制</h3>
+                    
+                    <div class="slider-control">
+                        <div class="slider-label">
+                            <span>PlaySpeed (播放速度)</span>
+                            <span id="PlaySpeed_val">1</span>
+                        </div>
+                        <input type="range" id="PlaySpeed" min="1" max="10" value="1" 
+                               oninput="updatePlaySpeed(this.value)">
+                    </div>
+                    
+                    <label style="display: flex; align-items: center; margin-top: 10px;">
+                        <input type="checkbox" id="loopPlayback" checked style="margin-right: 10px;">
+                        <span>循环播放</span>
+                    </label>
+                </div>
+
+                <div class="button-group">
+                    <button onclick="loadSavedConfig()">恢复配置</button>
+                    <button onclick="saveConfig()">保存配置</button>
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <button onclick="clearStartPoint()" style="width: 100%;">清除起始点</button>
+                    <p style="font-size: 11px; color: #aaa; margin-top: 5px;">点击左侧视频设置起始点</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFrameIdx = 0;
+        let totalFrames = 0;
+        let isPlaying = false;
+        let playInterval = null;
+        let params = {};
+        let isLoading = false;  // 防止并发请求
+        let startPoint = null;  // 起始点
+        let playSpeed = 1;  // 播放速度
+
+        // 初始化
+        async function init() {
+            await loadParams();
+            await loadVideo();
+            setupCanvasClick();
+        }
+        
+        // 设置画布点击事件
+        function setupCanvasClick() {
+            const displayDiv = document.getElementById('videoDisplay');
+            displayDiv.addEventListener('click', async function(event) {
+                const canvas = displayDiv.querySelector('canvas');
+                if (!canvas) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                
+                // 计算在原始图像上的坐标（左半部分是tracking区域）
+                const x = Math.floor((event.clientX - rect.left) * scaleX);
+                const y = Math.floor((event.clientY - rect.top) * scaleY);
+                
+                // 只在左半部分（tracking区域）响应点击
+                if (x < canvas.width / 2) {
+                    startPoint = {x: x, y: y};
+                    
+                    // 发送到后端
+                    await fetch('/set_start_point', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({x: x, y: y})
+                    });
+                    
+                    // 重新加载当前帧显示起始点
+                    await loadFrame(currentFrameIdx);
+                }
+            });
+        }
+
+        // 加载参数
+        async function loadParams() {
+            const response = await fetch('/get_params');
+            params = await response.json();
+            
+            // 更新所有滑动条
+            for (const [key, value] of Object.entries(params)) {
+                const slider = document.getElementById(key);
+                const label = document.getElementById(key + '_val');
+                if (slider) slider.value = value;
+                if (label) label.textContent = value;
+            }
+        }
+
+        // 更新参数
+        function updateParam(key, value) {
+            params[key] = parseInt(value);
+            document.getElementById(key + '_val').textContent = value;
+            
+            fetch('/update_params', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({[key]: parseInt(value)})
+            });
+            
+            // 对于颜色检测和排除区域参数，立即重新渲染以显示变化
+            const realtimeUpdateParams = ['R_min', 'R_max', 'G_min', 'G_max', 'B_min', 'B_max', 
+                                          'RG_ratio', 'RB_diff', 'Min_Area', 'Max_Area',
+                                          'Exclude_Right', 'Exclude_Bottom'];
+            
+            if (realtimeUpdateParams.includes(key)) {
+                loadFrame(currentFrameIdx);
+            }
+        }
+
+        // 加载视频
+        async function loadVideo() {
+            const videoPath = document.getElementById('videoPath').value;
+            
+            const response = await fetch('/load_video', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({video_path: videoPath})
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                totalFrames = data.frame_count;
+                document.getElementById('totalFrames').textContent = totalFrames;
+                document.getElementById('frameSlider').max = totalFrames - 1;
+                currentFrameIdx = 0;
+                loadFrame(0);
+            }
+        }
+
+        // 加载帧
+        async function loadFrame(frameIdx) {
+            // 如果正在加载，跳过这次请求
+            if (isLoading) {
+                return;
+            }
+            
+            isLoading = true;
+            
+            try {
+                const response = await fetch(`/get_frame/${frameIdx}`);
+                const data = await response.json();
+                
+                if (data.frame && data.mask) {
+                    // 创建图像元素
+                    const frameImg = new Image();
+                    const maskImg = new Image();
+                    
+                    frameImg.src = 'data:image/jpeg;base64,' + data.frame;
+                    maskImg.src = 'data:image/jpeg;base64,' + data.mask;
+                    
+                    // 等待图像加载
+                    await Promise.all([
+                        new Promise(resolve => frameImg.onload = resolve),
+                        new Promise(resolve => maskImg.onload = resolve)
+                    ]);
+                    
+                    // 创建画布合并图像
+                    const canvas = document.createElement('canvas');
+                    canvas.width = frameImg.width + maskImg.width;
+                    canvas.height = frameImg.height;
+                    const ctx = canvas.getContext('2d');
+                    
+                    ctx.drawImage(frameImg, 0, 0);
+                    ctx.drawImage(maskImg, frameImg.width, 0);
+                    
+                    // 显示合并后的图像
+                    const displayDiv = document.getElementById('videoDisplay');
+                    displayDiv.innerHTML = '';
+                    displayDiv.appendChild(canvas);
+                    
+                    // 更新信息
+                    currentFrameIdx = data.frame_idx;
+                    document.getElementById('currentFrame').textContent = currentFrameIdx + 1;
+                    document.getElementById('frameSlider').value = currentFrameIdx;
+                }
+            } catch (error) {
+                console.error('加载帧失败:', error);
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        // 播放控制
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            const btn = document.getElementById('playBtn');
+            
+            if (isPlaying) {
+                btn.textContent = '⏸ 暂停';
+                playLoop();
+            } else {
+                btn.textContent = '▶️ 播放';
+            }
+        }
+        
+        // 播放循环 - 使用async/await确保按顺序播放
+        async function playLoop() {
+            while (isPlaying) {
+                if (currentFrameIdx < totalFrames - 1) {
+                    await loadFrame(currentFrameIdx + 1);
+                } else {
+                    // 到达末尾
+                    const loopCheckbox = document.getElementById('loopPlayback');
+                    if (loopCheckbox && loopCheckbox.checked) {
+                        // 循环播放：回到开头
+                        await loadFrame(0);
+                    } else {
+                        // 不循环：停止播放
+                        isPlaying = false;
+                        document.getElementById('playBtn').textContent = '▶️ 播放';
+                        break;
+                    }
+                }
+                
+                // 根据播放速度调整延迟：速度越快，延迟越短
+                const delay = Math.max(10, Math.floor(33 / playSpeed));
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+        
+        // 更新播放速度
+        function updatePlaySpeed(value) {
+            playSpeed = parseInt(value);
+            document.getElementById('PlaySpeed_val').textContent = value;
+        }
+
+        function nextFrame() {
+            if (currentFrameIdx < totalFrames - 1) {
+                loadFrame(currentFrameIdx + 1);
+            }
+        }
+
+        function previousFrame() {
+            if (currentFrameIdx > 0) {
+                loadFrame(currentFrameIdx - 1);
+            }
+        }
+
+        function seekFrame(value) {
+            loadFrame(parseInt(value));
+        }
+
+        // 重置轨迹
+        async function resetTrajectory() {
+            await fetch('/reset_trajectory', {method: 'POST'});
+            loadFrame(0);
+        }
+        
+        // 恢复保存的配置
+        async function loadSavedConfig() {
+            const response = await fetch('/load_saved_config', {method: 'POST'});
+            const data = await response.json();
+            
+            if (data.success && data.params) {
+                params = data.params;
+                
+                // 更新所有滑动条
+                for (const [key, value] of Object.entries(params)) {
+                    const slider = document.getElementById(key);
+                    const label = document.getElementById(key + '_val');
+                    if (slider) slider.value = value;
+                    if (label) label.textContent = value;
+                }
+                
+                // 重新加载当前帧
+                await loadFrame(currentFrameIdx);
+                alert('配置已恢复到上次保存的状态！');
+            }
+        }
+        
+        // 清除起始点
+        async function clearStartPoint() {
+            startPoint = null;
+            await fetch('/set_start_point', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({x: null, y: null})
+            });
+            await loadFrame(currentFrameIdx);
+        }
+
+        // 保存配置
+        async function saveConfig() {
+            const response = await fetch('/save_config', {method: 'POST'});
+            const data = await response.json();
+            if (data.success) {
+                alert('配置已保存！');
+            }
+        }
+
+        // 页面加载时初始化
+        window.onload = init;
+    </script>
+</body>
+</html>

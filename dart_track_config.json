@@ -1,0 +1,17 @@
+{
+  "R_min": 77,
+  "R_max": 246,
+  "G_min": 105,
+  "G_max": 255,
+  "B_min": 0,
+  "B_max": 150,
+  "Min_Area": 26,
+  "Max_Area": 1906,
+  "RG_ratio": 23,
+  "RB_diff": 70,
+  "Max_Jump": 158,
+  "Exclude_Right": 480,
+  "Exclude_Bottom": 701,
+  "Min_Motion": 27,
+  "Motion_Frames": 2
+}
