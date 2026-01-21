@@ -1,0 +1,13 @@
+output/
+*.mp4
+*.avi
+*.jpg
+*.png
+*.pyc
+__pycache__/
+.DS_Store
+*.swp
+*.swo
+*~
+archive/
+.vscode/
