@@ -180,6 +180,28 @@ default_position = (85%, 85%)  # 默认位置（右下角）
 - 检查光照条件（需要红色发光飞镖头）
 - 确认HSV阈值适合你的环境
 
+## 树莓派性能监控（开发者备忘）
+
+### 检查供电状态
+```bash
+vcgencmd get_throttled
+```
+
+**输出含义**：
+- `0x0` - 从未欠压（正常）
+- `0x50000` - 曾经欠压
+- `0x50005` - 曾经 + 现在都在欠压（需要更换电源）
+
+### 实时监控CPU频率
+```bash
+watch -n 1 vcgencmd measure_clock arm
+```
+
+**说明**：
+- 欠压会导致CPU降频，影响检测性能
+- 建议使用5V/3A以上的电源适配器
+- USB相机会增加功耗，确保供电充足
+
 ## 开发说明
 
 ### 核心算法
@@ -223,7 +245,7 @@ main()
 
 ## 贡献者
 
-- **开发者**：ZongyuanYeeeeeeeeeah
+- **开发者**：ZongyuanYeeeeeeeeeah /  JoeyLiu
 - **组织**：Illini RoboMaster
 - **项目**：Dart 2025 Trajectory Detection
 
