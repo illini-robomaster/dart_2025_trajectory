@@ -13,24 +13,24 @@ import time
 from datetime import datetime
 
 def main():
-    print("飞镖头检测启动中（无界面模式）...")
+    print("Dart detector starting (headless mode)...")
     
     # 枚举相机
     DevList = mvsdk.CameraEnumerateDevice()
     nDev = len(DevList)
     if nDev < 1:
-        print("错误：未找到相机！")
+        print("Error: No camera found!")
         return
 
     # 直接使用第一个相机
     DevInfo = DevList[0]
-    print(f"使用相机: {DevInfo.GetFriendlyName()}")
+    print(f"Using camera: {DevInfo.GetFriendlyName()}")
 
     # 打开相机
     try:
         hCamera = mvsdk.CameraInit(DevInfo, -1, -1)
     except mvsdk.CameraException as e:
-        print(f"初始化失败: {e.message}")
+        print(f"Init failed: {e.message}")
         return
 
     try:
@@ -38,24 +38,44 @@ def main():
         monoCamera = (cap.sIspCapacity.bMonoSensor != 0)
         
         if monoCamera:
-            print("错误：需要彩色相机！")
+            print("Error: Color camera required!")
             return
 
-        # 设置最小分辨率
+        # 打印相机支持的分辨率范围
+        print(f"Camera resolution range: {cap.sResolutionRange.iWidthMin}x{cap.sResolutionRange.iHeightMin} to {cap.sResolutionRange.iWidthMax}x{cap.sResolutionRange.iHeightMax}")
+        
+        # 设置自定义分辨率640x480
+        target_width = 640
+        target_height = 480
+        
         try:
-            target_index = cap.sResolutionRange.iImageSizeDesc - 1
-            min_pixels = float('inf')
-            for i in range(cap.sResolutionRange.iImageSizeDesc):
-                desc = cap.pImageSizeDesc[i]
-                pixels = desc.iWidth * desc.iHeight
-                if pixels < min_pixels:
-                    min_pixels = pixels
-                    target_index = i
+            # 使用SDK的tSdkImageResolution结构体
+            custom_res = mvsdk.tSdkImageResolution()
+            custom_res.iIndex = 0xff  # 0xff表示自定义分辨率
+            custom_res.iWidth = target_width
+            custom_res.iHeight = target_height
+            custom_res.iWidthFOV = target_width
+            custom_res.iHeightFOV = target_height
+            custom_res.iHOffsetFOV = 0
+            custom_res.iVOffsetFOV = 0
+            custom_res.iWidthZoomSw = 0
+            custom_res.iHeightZoomSw = 0
+            custom_res.iWidthZoomHd = 0
+            custom_res.iHeightZoomHd = 0
+            custom_res.uBinSumMode = 0
+            custom_res.uBinAverageMode = 0
+            custom_res.uSkipMode = 0
+            custom_res.uResampleMask = 0
             
-            if target_index >= 0:
-                mvsdk.CameraSetImageResolution(hCamera, cap.pImageSizeDesc[target_index])
-        except:
-            pass
+            mvsdk.CameraSetImageResolution(hCamera, custom_res)
+            print(f"✓ Set custom resolution: {target_width} x {target_height}")
+            selected_width = target_width
+            selected_height = target_height
+        except Exception as e:
+            print(f"⚠ Failed to set custom resolution: {e}")
+            print(f"  Using default resolution: {cap.sResolutionRange.iWidthMax} x {cap.sResolutionRange.iHeightMax}")
+            selected_width = cap.sResolutionRange.iWidthMax
+            selected_height = cap.sResolutionRange.iHeightMax
 
         # 设置输出格式为BGR8
         mvsdk.CameraSetIspOutFormat(hCamera, mvsdk.CAMERA_MEDIA_TYPE_BGR8)
@@ -63,15 +83,18 @@ def main():
         # 连续采集模式
         mvsdk.CameraSetTriggerMode(hCamera, 0)
 
-        # 自动曝光
-        mvsdk.CameraSetAeState(hCamera, 1)
+        # 手动曝光（关键优化：避免AE限制帧率）
+        mvsdk.CameraSetAeState(hCamera, 0)  # 关闭自动曝光
+        mvsdk.CameraSetExposureTime(hCamera, 20000)  # 20000us = 20ms
+        print(f"Exposure mode: Manual 20ms")
 
         # 开始采集
         mvsdk.CameraPlay(hCamera)
 
-        # 分配缓存
-        FrameBufferSize = cap.sResolutionRange.iWidthMax * cap.sResolutionRange.iHeightMax * 3
+        # 按实际分辨率分配缓存
+        FrameBufferSize = selected_width * selected_height * 3
         pFrameBuffer = mvsdk.CameraAlignMalloc(FrameBufferSize, 16)
+        print(f"Buffer size: {selected_width} x {selected_height} x 3 = {FrameBufferSize} bytes")
 
         # 红色的HSV阈值范围
         lower_red1 = np.array([0, 100, 100])
@@ -88,7 +111,7 @@ def main():
         fps_counter = 0
         fps = 0
         
-        print("\n检测开始 - 按Ctrl+C退出")
+        print("\nDetection started - Press Ctrl+C to exit")
         print("=" * 60)
 
         while True:
@@ -117,6 +140,7 @@ def main():
                     fps_time = time.time()
 
                 # === 性能优化：缩小图像用于检测 ===
+                # 将图像缩小到1/2进行检测
                 detect_frame = cv2.resize(frame, (FrameHead.iWidth // 2, FrameHead.iHeight // 2), 
                                          interpolation=cv2.INTER_LINEAR)
                 scale_factor = 2
@@ -126,14 +150,13 @@ def main():
                 # 1. 转换到HSV颜色空间
                 hsv = cv2.cvtColor(detect_frame, cv2.COLOR_BGR2HSV)
                 
-                # 2. 检测红色
+                # 2. 检测红色（两个范围的掩模合并）
                 mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
                 mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
                 mask = cv2.bitwise_or(mask1, mask2)
                 
-                # 3. 形态学操作
+                # 3. 形态学操作（简化：只做一次）
                 kernel = np.ones((3, 3), np.uint8)
-                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
                 mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
                 
                 # 4. 查找轮廓
@@ -173,33 +196,32 @@ def main():
                         'aspect_ratio': aspect_ratio
                     })
                 
-                # 打印检测结果（每秒只打印一次，避免刷屏）
-                if fps_counter == 1:  # 每秒开始时打印
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] FPS: {fps:2d} | 飞镖数: {detected_objects}", end="")
-                    
+                # 打印结果（每秒一次）
+                if fps_counter == 1:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] FPS: {fps:2d} | Darts: {detected_objects}", end="")
                     if detected_objects > 0:
-                        print(" | 位置: ", end="")
-                        for i, dart in enumerate(dart_positions):
+                        print(" | Pos: ", end="")
+                        for dart in dart_positions[:3]:  # 只显示前3个
                             cx, cy = dart['center']
                             print(f"({cx},{cy})", end=" ")
-                    print()  # 换行
+                    print()
                 
             except mvsdk.CameraException as e:
                 if e.error_code != mvsdk.CAMERA_STATUS_TIME_OUT:
-                    print(f"相机错误: {e.message}")
+                    print(f"Camera error: {e.message}")
             except KeyboardInterrupt:
-                print("\n\n用户中断")
+                print("\n\nUser interrupted")
                 break
 
     finally:
         mvsdk.CameraUnInit(hCamera)
         mvsdk.CameraAlignFree(pFrameBuffer)
-        print("相机已关闭")
+        print("Camera closed")
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        print(f"错误: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()

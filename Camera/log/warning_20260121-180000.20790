@@ -1,0 +1,4 @@
+Log file created at: 2026/01/21 18:00:00
+Running on machine: raspberrypi
+Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg
+W0121 18:00:00.700619 20861 MVCameraBase.cpp:99] Device:(name:MV-SUA133GC#0 sn:043070620316)Lost

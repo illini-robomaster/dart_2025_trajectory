@@ -68,21 +68,30 @@ def main():
             print("错误：需要彩色相机！")
             return
 
-        # 设置最小分辨率
+        # 设置640x480分辨率（优化性能）
         try:
-            target_index = cap.sResolutionRange.iImageSizeDesc - 1
-            min_pixels = float('inf')
-            for i in range(cap.sResolutionRange.iImageSizeDesc):
-                desc = cap.pImageSizeDesc[i]
-                pixels = desc.iWidth * desc.iHeight
-                if pixels < min_pixels:
-                    min_pixels = pixels
-                    target_index = i
+            custom_res = mvsdk.tSdkImageResolution()
+            custom_res.iIndex = 0xff
+            custom_res.iWidth = 640
+            custom_res.iHeight = 480
+            custom_res.iWidthFOV = 640
+            custom_res.iHeightFOV = 480
+            custom_res.iHOffsetFOV = 0
+            custom_res.iVOffsetFOV = 0
+            custom_res.iWidthZoomSw = 0
+            custom_res.iHeightZoomSw = 0
+            custom_res.iWidthZoomHd = 0
+            custom_res.iHeightZoomHd = 0
+            custom_res.uBinSumMode = 0
+            custom_res.uBinAverageMode = 0
+            custom_res.uSkipMode = 0
+            custom_res.uResampleMask = 0
             
-            if target_index >= 0:
-                mvsdk.CameraSetImageResolution(hCamera, cap.pImageSizeDesc[target_index])
-        except:
-            pass  # 忽略错误，使用默认分辨率
+            mvsdk.CameraSetImageResolution(hCamera, custom_res)
+            print(f"✓ 已设置分辨率: 640x480")
+        except Exception as e:
+            print(f"⚠ 设置分辨率失败: {e}")
+            pass
 
         # 设置输出格式为BGR8
         mvsdk.CameraSetIspOutFormat(hCamera, mvsdk.CAMERA_MEDIA_TYPE_BGR8)
@@ -90,10 +99,10 @@ def main():
         # 连续采集模式
         mvsdk.CameraSetTriggerMode(hCamera, 0)
 
-        # 自动曝光
-        auto_exposure = True
-        exposure_time = 50 * 1000
-        mvsdk.CameraSetAeState(hCamera, 1)
+        # 手动曝光（关键优化：避免AE限制帧率）
+        mvsdk.CameraSetAeState(hCamera, 0)  # 关闭自动曝光
+        mvsdk.CameraSetExposureTime(hCamera, 20000)  # 20000us = 20ms
+        print(f"曝光模式: 手动 5ms")
 
         # 开始采集
         mvsdk.CameraPlay(hCamera)
@@ -113,12 +122,26 @@ def main():
         
         # 起始点相关变量
         loaded_start_point = load_config()
-        start_point = tuple(loaded_start_point) if loaded_start_point and isinstance(loaded_start_point, list) and len(loaded_start_point) == 2 else None
-        start_point_radius = 70  # 起始点触发半径
-        start_point_triggered = False if start_point else True  # 如果没有起始点，直接启用追踪
+        # 如果有旧的起始点坐标，需要检查是否超出当前分辨率范围
+        # 假设旧坐标是基于1280x1024，新分辨率是640x480，需要缩放
+        if loaded_start_point and isinstance(loaded_start_point, list) and len(loaded_start_point) == 2:
+            # 获取当前实际分辨率（第一帧才知道，这里先假设640x480）
+            # 如果坐标超出640x480范围，说明是旧坐标，需要缩放
+            old_x, old_y = loaded_start_point
+            if old_x > 640 or old_y > 480:
+                # 按比例缩放 (假设原来是1280x1024)
+                new_x = int(old_x * 640 / 1280)
+                new_y = int(old_y * 480 / 1024)
+                start_point = (new_x, new_y)
+                print(f"已缩放起始点: {loaded_start_point} -> {start_point}")
+            else:
+                start_point = tuple(loaded_start_point)
+                print(f"已加载起始点: {start_point}")
+        else:
+            start_point = None
         
-        if start_point:
-            print(f"已加载起始点: {start_point}")
+        start_point_radius = 30  # 起始点触发半径
+        start_point_triggered = False if start_point else True  # 如果没有起始点，直接启用追踪
 
         # 红色的HSV阈值范围（红色在HSV中分为两段）
         # 红色1: 0-10度
@@ -342,8 +365,8 @@ def main():
                     if not recording:
                         record_filename = f"dart_video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
                         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                        # 使用固定帧率10，避免视频加速
-                        video_writer = cv2.VideoWriter(record_filename, fourcc, 10, 
+                        # 使用固定帧率20，避免视频加速
+                        video_writer = cv2.VideoWriter(record_filename, fourcc, 20, 
                                                       (FrameHead.iWidth, FrameHead.iHeight))
                         recording = True
                     else:
