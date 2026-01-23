@@ -1,0 +1,16 @@
+{
+  "green_led": {
+    "hsv_lower": [
+      46,
+      55,
+      74
+    ],
+    "hsv_upper": [
+      71,
+      255,
+      255
+    ],
+    "area_min": 1826,
+    "area_max": 15463
+  }
+}
